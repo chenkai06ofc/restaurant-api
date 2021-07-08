@@ -70,7 +70,19 @@ async fn handle_req(req: Request<Body>) -> Result<Response<Body>, hyper::Error> 
             }
         }
         (&Method::POST, "/item/remove") => {
-            Ok(Response::new("remove succeed".into()))
+            match (params.get("table_no"), params.get("item_no")) {
+                (Some(table_no), Some(item_no)) => {
+                    let mut pipe = redis::pipe();
+                    let table_key = format!("table:{}", table_no);
+                    let item_key = format!("item:{}-{}", table_no, item_no);
+                    let _ : () = pipe.hdel(&table_key, item_no).del(&item_key).query(&mut con).unwrap();
+                    Ok(Response::new("remove succeed".into()))
+                }
+                _ => Ok(Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Body::from("Please specify table_no and content"))
+                    .unwrap())
+            }
         }
         (&Method::GET, "/item/query") => {
             Ok(Response::new("query succeed".into()))
