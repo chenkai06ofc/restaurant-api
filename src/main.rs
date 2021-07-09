@@ -5,6 +5,8 @@ use redis::{Commands, Connection};
 use rand::Rng;
 use serde::{Serialize, Deserialize};
 
+mod util;
+
 static mut cur_item_no: u64 = 1;
 
 unsafe fn next_item_no() -> u64{
@@ -25,19 +27,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 }
 
 
-fn parse_query_str(query_string: &str) -> HashMap<String, String> {
-    let mut params: HashMap<String, String> = HashMap::new();
-    let mut p = &mut params;
-    query_string.split("&").for_each(|s| {
-        let (key, value) = s.split_once("=").unwrap();
-        p.insert(String::from(key), String::from(value));
-    });
-    return params;
-}
-
 async fn handle_req(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
     let query_string = req.uri().query().unwrap();
-    let mut params = parse_query_str(query_string);
+    let mut params = util::parse_query_str(query_string);
 
     // get Redis connection
     let client = redis::Client::open("redis://127.0.0.1/").unwrap();
