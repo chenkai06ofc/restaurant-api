@@ -3,6 +3,7 @@ use hyper::{Request, Body, Response, StatusCode, Method, Server};
 use std::collections::HashMap;
 use redis::{Commands, Connection};
 use rand::Rng;
+use serde::{Serialize, Deserialize};
 
 static mut cur_item_no: u64 = 1;
 
@@ -85,11 +86,44 @@ async fn handle_req(req: Request<Body>) -> Result<Response<Body>, hyper::Error> 
             }
         }
         (&Method::GET, "/item/query") => {
-            Ok(Response::new("query succeed".into()))
+            match (params.get("table_no"), params.get("item_no")) {
+                (Some(table_no), Some(item_no)) => {
+                    let map : HashMap<String, String> =
+                        con.hgetall(format!("item:{}-{}", table_no, item_no)).unwrap();
+
+                    let item = Item {
+                        table_no: table_no.parse().unwrap(),
+                        item_no: item_no.parse().unwrap(),
+                        content: String::from(map.get("content").unwrap()),
+                        prepare_time_min: map.get("prepare_time_min").unwrap().parse().unwrap()
+                    };
+                    let serialized = serde_json::to_string(&item).unwrap();
+                    Ok(Response::new(serialized.into()))
+                }
+                (Some(table_no), None) => {
+                    let map : HashMap<String, String> = con.hgetall(format!("table:{}", table_no)).unwrap();
+                    let serialized = serde_json::to_string(&map).unwrap();
+                    Ok(Response::new(serialized.into()))
+                }
+                _ => Ok(Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Body::empty())
+                    .unwrap())
+            }
+
         }
         _ => Ok(Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .body(Body::empty())
                 .unwrap())
     }
+}
+
+#[derive(Serialize, Deserialize)]
+struct Item {
+    table_no: u32,
+    item_no: u32,
+    content: String,
+    //generate_time:
+    prepare_time_min: u32,
 }
