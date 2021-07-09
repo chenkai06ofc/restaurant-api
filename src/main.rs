@@ -7,6 +7,9 @@ use serde::{Serialize, Deserialize};
 use tokio::time::{self, Duration};
 
 mod util;
+mod item;
+
+use item::Item;
 
 static mut cur_item_no: u64 = 1;
 const COOK_QUEUE_LEN: u32 = 20;
@@ -70,7 +73,9 @@ async fn handle_req(req: Request<Body>) -> Result<Response<Body>, hyper::Error> 
         (&Method::GET, "/item/query") => {
             match (params.get("table_no"), params.get("item_no")) {
                 (Some(table_no), Some(item_no)) => {
-                    let item = get_item(&mut con, table_no, item_no);
+                    let table_no: u32 = table_no.parse().unwrap();
+                    let item_no: u32 = item_no.parse().unwrap();
+                    let item = item::get_item(&mut con, table_no, item_no);
                     let serialized = serde_json::to_string(&item).unwrap();
                     Ok(Response::new(serialized.into()))
                 }
@@ -124,17 +129,6 @@ unsafe fn add_item(con: &mut Connection, table_no: &String, content: &String) {
     let _ : () = con.sadd(format!("cook_queue:{}", cook_queue_ptr), format!("{}-{}",table_no, item_no)).unwrap();
 }
 
-fn get_item(con: &mut Connection, table_no: &String, item_no: &String) -> Item {
-    let map : HashMap<String, String> =
-        con.hgetall(format!("item:{}-{}", table_no, item_no)).unwrap();
-
-    Item {
-        table_no: table_no.parse().unwrap(),
-        item_no: item_no.parse().unwrap(),
-        content: String::from(map.get("content").unwrap()),
-        prepare_time_min: map.get("prepare_time_min").unwrap().parse().unwrap()
-    }
-}
 
 fn remove_item(con: &mut Connection, table_no: &String, item_no: &String) {
     let mut pipe = redis::pipe();
@@ -156,13 +150,4 @@ fn cook_complete(con: &mut Connection) {
     }
     cook_queue_ptr = (cook_queue_ptr + 1) % COOK_QUEUE_LEN;
     let _ : () = p.del(&key).set("cook_queue_ptr", cook_queue_ptr).query(con).unwrap();
-}
-
-#[derive(Serialize, Deserialize)]
-struct Item {
-    table_no: u32,
-    item_no: u32,
-    content: String,
-    //generate_time:
-    prepare_time_min: u32,
 }
