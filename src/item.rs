@@ -2,6 +2,8 @@ use serde::{Serialize, Deserialize};
 use redis::{Commands, Connection};
 use std::collections::HashMap;
 use rand::Rng;
+use tokio::sync::Mutex;
+use std::sync::Arc;
 
 pub const MIN_TABLE_NO: u32 = 1;
 pub const MAX_TABLE_NO: u32 = 100;
@@ -50,9 +52,9 @@ fn cook_queue_key(cook_queue_ptr: u32) -> String {
     format!("cook_queue:{}", cook_queue_ptr)
 }
 
-pub fn get_item(con: &mut Connection, table_no: u32, item_no: u64) -> Item {
-    let map : HashMap<String, String> =
-        con.hgetall(item_key(table_no, item_no)).unwrap();
+pub async fn get_item(r_con_hold: Arc<Mutex<Connection>>, table_no: u32, item_no: u64) -> Item {
+    let mut r_con = r_con_hold.lock().await;
+    let map : HashMap<String, String> = r_con.hgetall(item_key(table_no, item_no)).unwrap();
 
     Item::new(
         table_no,
@@ -62,7 +64,7 @@ pub fn get_item(con: &mut Connection, table_no: u32, item_no: u64) -> Item {
     )
 }
 
-pub unsafe fn add_item(con: &mut Connection, table_no: u32, content: &String) {
+pub async unsafe fn add_item(r_con_hold: Arc<Mutex<Connection>>, table_no: u32, content: &String) {
     let item_no = next_item_no();
 
     let table_key = table_key(table_no);
@@ -71,27 +73,31 @@ pub unsafe fn add_item(con: &mut Connection, table_no: u32, content: &String) {
     println!("  add {}, time: {}", &item_key, prepare_time_min);
     let time_str = prepare_time_min.to_string();
 
-    // update redis Set cook_queue:{min}
-    let mut cook_queue_ptr: u32 = con.get(COOK_QUEUE_PTR).unwrap();
+    let mut r_con = r_con_hold.lock().await;
+    let mut cook_queue_ptr: u32 = r_con.get(COOK_QUEUE_PTR).unwrap();
     cook_queue_ptr = (cook_queue_ptr + prepare_time_min) % COOK_QUEUE_LEN;
 
     let _ : () = redis::pipe()
         .hset(&table_key, &item_no.to_string(), content)
         .hset_multiple(&item_key, &[("content", content), ("prepare_time_min", &time_str) ])
         .sadd(cook_queue_key(cook_queue_ptr), format!("{}-{}",table_no, item_no))
-        .query(con).unwrap();
+        .query(&mut (*r_con)).unwrap();
 }
 
-pub fn remove_item(con: &mut Connection, table_no: u32, item_no: u64) {
+pub async fn remove_item(r_con_hold: Arc<Mutex<Connection>>, table_no: u32, item_no: u64) {
     let table_key = table_key(table_no);
     let item_key = item_key(table_no, item_no);
-    let _ : () = redis::pipe().hdel(&table_key, item_no).del(&item_key).query(con).unwrap();
+
+    let mut r_con = r_con_hold.lock().await;
+    let _ : () = redis::pipe().hdel(&table_key, item_no).del(&item_key).query(&mut (*r_con)).unwrap();
 }
 
-pub fn cook_complete(con: &mut Connection) {
-    let mut cook_queue_ptr: u32 = con.get(COOK_QUEUE_PTR).unwrap();
+pub async fn cook_complete(r_con_hold: Arc<Mutex<Connection>>) {
+    let mut r_con = r_con_hold.lock().await;
+
+    let mut cook_queue_ptr: u32 = r_con.get(COOK_QUEUE_PTR).unwrap();
     let key = cook_queue_key(cook_queue_ptr);
-    let vec: Vec<String> = con.smembers(&key).unwrap();
+    let vec: Vec<String> = r_con.smembers(&key).unwrap();
     println!("round {} cooked: {}", cook_queue_ptr, vec.join(" "));
     let mut pipe = redis::pipe();
     let mut p = &mut pipe;
@@ -100,5 +106,5 @@ pub fn cook_complete(con: &mut Connection) {
         p = p.hdel(format!("table:{}", table_no), item_no).del(format!("item:{}-{}", table_no, item_no));
     }
     cook_queue_ptr = (cook_queue_ptr + 1) % COOK_QUEUE_LEN;
-    let _ : () = p.del(&key).set(COOK_QUEUE_PTR, cook_queue_ptr).query(con).unwrap();
+    let _ : () = p.del(&key).set(COOK_QUEUE_PTR, cook_queue_ptr).query(&mut (*r_con)).unwrap();
 }
