@@ -8,11 +8,11 @@ use std::sync::Arc;
 pub const MIN_TABLE_NO: u32 = 1;
 pub const MAX_TABLE_NO: u32 = 100;
 
-static mut cur_item_no: u64 = 1;
 const COOK_QUEUE_LEN: u32 = 20;
 
 // redis keys
 pub const COOK_QUEUE_PTR: &str = "cook_queue_ptr";
+pub const NEXT_ITEM_NO: &str = "next_item_no";
 
 #[derive(Serialize, Deserialize)]
 pub struct Item {
@@ -32,12 +32,6 @@ impl Item {
             prepare_time_min
         }
     }
-}
-
-unsafe fn next_item_no() -> u64 {
-    let item_no = cur_item_no;
-    cur_item_no+=1;
-    item_no
 }
 
 fn table_key(table_no: u32) -> String {
@@ -64,8 +58,11 @@ pub async fn get_item(r_con_hold: Arc<Mutex<Connection>>, table_no: u32, item_no
     )
 }
 
-pub async unsafe fn add_item(r_con_hold: Arc<Mutex<Connection>>, table_no: u32, content: &String) {
-    let item_no = next_item_no();
+pub async fn add_item(r_con_hold: Arc<Mutex<Connection>>, table_no: u32, content: &String) {
+    let mut r_con = r_con_hold.lock().await;
+
+    let mut item_no = r_con.incr(NEXT_ITEM_NO, 1).unwrap();
+    item_no -= 1;
 
     let table_key = table_key(table_no);
     let item_key = item_key(table_no, item_no);
@@ -73,7 +70,7 @@ pub async unsafe fn add_item(r_con_hold: Arc<Mutex<Connection>>, table_no: u32, 
     println!("  add {}, time: {}", &item_key, prepare_time_min);
     let time_str = prepare_time_min.to_string();
 
-    let mut r_con = r_con_hold.lock().await;
+
     let mut cook_queue_ptr: u32 = r_con.get(COOK_QUEUE_PTR).unwrap();
     cook_queue_ptr = (cook_queue_ptr + prepare_time_min) % COOK_QUEUE_LEN;
 

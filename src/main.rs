@@ -20,6 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let client = redis::Client::open("redis://127.0.0.1/").unwrap();
     let mut r_con = client.get_connection().unwrap();
     let _ : () = r_con.set(item::COOK_QUEUE_PTR, 0).unwrap();
+    let _ : () = r_con.set(item::NEXT_ITEM_NO, 1).unwrap();
 
     let r_con_hold = Arc::new(Mutex::new(r_con));
     let r_con_hold1 = r_con_hold.clone();
@@ -54,7 +55,7 @@ async fn handle_req(r_con_hold: Arc<Mutex<Connection>>, req: Request<Body>) -> R
     match (req.method(), req.uri().path()) {
         (&Method::POST, "/item/add") => {
             match (params.get("table_no"), params.get("content")) {
-                (Some(table_no), Some(content)) => unsafe {
+                (Some(table_no), Some(content)) => {
                     let table_no: u32 = table_no.parse().unwrap();
                     item::add_item(r_con_hold, table_no, content).await;
                     Ok(Response::new("add succeed".into()))
