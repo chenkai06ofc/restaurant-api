@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         async move { Ok::<_, hyper::Error>(service_fn(move |req| handle_req(r_con_hold.clone(), req))) }
     });
 
-    let addr = ([127, 0, 0, 1], 3000).into();
+    let addr = ([0, 0, 0, 0], 3000).into();
     let server = Server::bind(&addr).serve(make_service);
 
     tokio::spawn(async move {
