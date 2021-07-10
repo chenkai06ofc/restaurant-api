@@ -9,15 +9,16 @@ use std::sync::Arc;
 
 mod util;
 mod item;
+mod config;
 
 use item::Item;
 
 const SECS_PER_MIN: u64 = 20;
 
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+
+    let client = redis::Client::open(&(config::redis_url())[..]).unwrap();
     let mut r_con = client.get_connection().unwrap();
     let _ : () = r_con.set(item::COOK_QUEUE_PTR, 0).unwrap();
     let _ : () = r_con.set(item::NEXT_ITEM_NO, 1).unwrap();
