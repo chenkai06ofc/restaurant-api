@@ -2,7 +2,6 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Body, Response, StatusCode, Method, Server};
 use std::collections::HashMap;
 use redis::{Commands, Connection};
-use serde::{Serialize, Deserialize};
 use tokio::time::{self, Duration};
 use tokio::sync::Mutex;
 use std::sync::Arc;
@@ -12,10 +11,7 @@ mod util;
 mod item;
 mod config;
 
-use item::{Item, AddReq, RemoveReq};
-use serde_json::Error;
-
-const SECS_PER_MIN: u64 = 20;
+use item::{AddReq, RemoveReq};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -37,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let server = Server::bind(&addr).serve(make_service);
 
     tokio::spawn(async move {
-        let mut interval = time::interval(Duration::from_secs(SECS_PER_MIN));
+        let mut interval = time::interval(Duration::from_secs(config::seconds_per_min()));
         loop {
             interval.tick().await;
             item::cook_complete(r_con_hold2.clone()).await;
@@ -59,7 +55,7 @@ async fn handle_req(r_con_hold: Arc<Mutex<Connection>>, req: Request<Body>) -> R
                 Some(str) => str,
                 None => return Ok(not_found("parameter (table_no & [item_no]) not found"))
             };
-            let mut params = util::parse_query_str(query_string);
+            let params = util::parse_query_str(query_string);
             handle_query(r_con_hold, params).await
         }
         _ => Ok(not_found("path not found"))

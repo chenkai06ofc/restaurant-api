@@ -133,7 +133,7 @@ pub async fn cook_complete(r_con_hold: Arc<Mutex<Connection>>) {
 
     print!("round {} cooked: ", cook_queue_ptr);
     for s in cooked_items.iter() {
-        if (removed_items.contains(s)) {
+        if removed_items.contains(s) {
             pipe = pipe.srem(REMOVED_ITEMS, s);
         } else {
             print!("{} ", s);
