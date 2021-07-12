@@ -8,7 +8,7 @@ use std::sync::Arc;
 pub const MIN_TABLE_NO: u32 = 1;
 pub const MAX_TABLE_NO: u32 = 100;
 
-const COOK_QUEUE_LEN: u32 = 20;
+const COOK_QUEUE_LEN: u32 = 16;
 
 // redis keys
 pub const COOK_QUEUE_PTR: &str = "cook_queue_ptr";
@@ -32,6 +32,30 @@ impl Item {
             content,
             prepare_time_min
         }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AddReq {
+    pub table_no: u32,
+    pub content: String
+}
+
+impl AddReq {
+    pub fn from (s: &str) -> serde_json::error::Result<AddReq> {
+        serde_json::from_str(s)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RemoveReq {
+    pub table_no: u32,
+    pub item_no: u64
+}
+
+impl RemoveReq {
+    pub fn from (s: &str) -> serde_json::error::Result<RemoveReq> {
+        serde_json::from_str(s)
     }
 }
 

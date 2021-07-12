@@ -6,12 +6,14 @@ use serde::{Serialize, Deserialize};
 use tokio::time::{self, Duration};
 use tokio::sync::Mutex;
 use std::sync::Arc;
+use std::str;
 
 mod util;
 mod item;
 mod config;
 
-use item::Item;
+use item::{Item, AddReq, RemoveReq};
+use serde_json::Error;
 
 const SECS_PER_MIN: u64 = 20;
 
@@ -50,32 +52,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 
 async fn handle_req(r_con_hold: Arc<Mutex<Connection>>, req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
-    let query_string = req.uri().query().unwrap();
-    let mut params = util::parse_query_str(query_string);
 
     match (req.method(), req.uri().path()) {
         (&Method::POST, "/item/add") => {
-            match (params.get("table_no"), params.get("content")) {
-                (Some(table_no), Some(content)) => {
-                    let table_no: u32 = table_no.parse().unwrap();
-                    item::add_item(r_con_hold, table_no, content).await;
-                    Ok(Response::new("add succeed".into()))
-                }
-                _ => Ok(bad_request("Please specify table_no & content"))
-            }
+            handle_add(r_con_hold, req).await
         }
         (&Method::POST, "/item/remove") => {
-            match (params.get("table_no"), params.get("item_no")) {
-                (Some(table_no), Some(item_no)) => {
-                    let table_no: u32 = table_no.parse().unwrap();
-                    let item_no: u64 = item_no.parse().unwrap();
-                    item::remove_item(r_con_hold, table_no, item_no).await;
-                    Ok(Response::new("remove succeed".into()))
-                }
-                _ => Ok(bad_request("Please specify table_no & item_no"))
-            }
+            handle_remove(r_con_hold, req).await
         }
         (&Method::GET, "/item/query") => {
+            let query_string = req.uri().query().unwrap();
+            let mut params = util::parse_query_str(query_string);
+
             match (params.get("table_no"), params.get("item_no")) {
                 (Some(table_no), Some(item_no)) => {
                     let table_no: u32 = table_no.parse().unwrap();
@@ -110,4 +98,34 @@ fn bad_request(msg: &'static str) -> Response<Body> {
         .status(StatusCode::BAD_REQUEST)
         .body(Body::from(msg))
         .unwrap()
+}
+
+async fn handle_add(r_con_hold: Arc<Mutex<Connection>>, req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+    let body_u8 = get_u8_body(req).await;
+    let s = str::from_utf8(&body_u8).unwrap();
+    match AddReq::from(s) {
+        Ok(add_req) => {
+            item::add_item(r_con_hold, add_req.table_no, &add_req.content).await;
+            Ok(Response::new("add succeed".into()))
+        }
+        Err(_) => Ok(bad_request("Please specify table_no & content"))
+    }
+}
+
+
+async fn handle_remove(r_con_hold: Arc<Mutex<Connection>>, req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+    let body_u8 = get_u8_body(req).await;
+    let s = str::from_utf8(&body_u8).unwrap();
+    match RemoveReq::from(s) {
+        Ok(remove_req) => {
+            item::remove_item(r_con_hold, remove_req.table_no, remove_req.item_no).await;
+            Ok(Response::new("remove succeed".into()))
+        }
+        Err(_) => Ok(bad_request("Please specify table_no & item_no"))
+    }
+}
+
+async fn get_u8_body(req: Request<Body>) -> Vec<u8> {
+    let whole_body = hyper::body::to_bytes(req.into_body()).await.unwrap();
+    whole_body.iter().cloned().collect::<Vec<u8>>()
 }
