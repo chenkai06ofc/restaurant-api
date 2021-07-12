@@ -19,7 +19,6 @@ const SECS_PER_MIN: u64 = 20;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-
     let client = redis::Client::open(&(config::redis_url())[..]).unwrap();
     let mut r_con = client.get_connection().unwrap();
     let _ : () = r_con.set(item::COOK_QUEUE_PTR, 0).unwrap();
@@ -52,44 +51,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 
 async fn handle_req(r_con_hold: Arc<Mutex<Connection>>, req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
-
     match (req.method(), req.uri().path()) {
-        (&Method::POST, "/item/add") => {
-            handle_add(r_con_hold, req).await
-        }
-        (&Method::POST, "/item/remove") => {
-            handle_remove(r_con_hold, req).await
-        }
+        (&Method::POST, "/item/add") => handle_add(r_con_hold, req).await,
+        (&Method::POST, "/item/remove") => handle_remove(r_con_hold, req).await,
         (&Method::GET, "/item/query") => {
-            let query_string = req.uri().query().unwrap();
+            let query_string = match req.uri().query() {
+                Some(str) => str,
+                None => return Ok(not_found("parameter (table_no & [item_no]) not found"))
+            };
             let mut params = util::parse_query_str(query_string);
-
-            match (params.get("table_no"), params.get("item_no")) {
-                (Some(table_no), Some(item_no)) => {
-                    let table_no: u32 = table_no.parse().unwrap();
-                    let item_no: u64 = item_no.parse().unwrap();
-                    let item = item::get_item(r_con_hold, table_no, item_no).await;
-                    let serialized = serde_json::to_string(&item).unwrap();
-                    Ok(Response::new(serialized.into()))
-                }
-                (Some(table_no), None) => {
-                    let mut r_con = r_con_hold.lock().await;
-                    let map : HashMap<String, String> = r_con.hgetall(format!("table:{}", table_no)).unwrap();
-                    let serialized = serde_json::to_string(&map).unwrap();
-                    Ok(Response::new(serialized.into()))
-                }
-                _ => Ok(not_found())
-            }
-
+            handle_query(r_con_hold, params).await
         }
-        _ => Ok(not_found())
+        _ => Ok(not_found("path not found"))
     }
 }
 
-fn not_found() -> Response<Body> {
+fn not_found(msg: &'static str) -> Response<Body> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
-        .body(Body::empty())
+        .body(Body::from(format!("Error: {}", msg)))
         .unwrap()
 }
 
@@ -122,6 +102,26 @@ async fn handle_remove(r_con_hold: Arc<Mutex<Connection>>, req: Request<Body>) -
             Ok(Response::new("remove succeed".into()))
         }
         Err(_) => Ok(bad_request("Please specify table_no & item_no"))
+    }
+}
+
+
+async fn handle_query(r_con_hold: Arc<Mutex<Connection>>, params: HashMap<String, String>) -> Result<Response<Body>, hyper::Error> {
+    match (params.get("table_no"), params.get("item_no")) {
+        (Some(table_no), Some(item_no)) => {
+            let table_no: u32 = table_no.parse().unwrap();
+            let item_no: u64 = item_no.parse().unwrap();
+            let item = item::get_item(r_con_hold, table_no, item_no).await;
+            let serialized = serde_json::to_string(&item).unwrap();
+            Ok(Response::new(serialized.into()))
+        }
+        (Some(table_no), None) => {
+            let mut r_con = r_con_hold.lock().await;
+            let map : HashMap<String, String> = r_con.hgetall(format!("table:{}", table_no)).unwrap();
+            let serialized = serde_json::to_string(&map).unwrap();
+            Ok(Response::new(serialized.into()))
+        }
+        _ => Ok(not_found("parameter (table_no & [item_no]) not found"))
     }
 }
 

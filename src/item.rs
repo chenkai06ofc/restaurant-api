@@ -8,7 +8,7 @@ use std::sync::Arc;
 pub const MIN_TABLE_NO: u32 = 1;
 pub const MAX_TABLE_NO: u32 = 100;
 
-const COOK_QUEUE_LEN: u32 = 16;
+const COOK_QUEUE_LEN: u32 = 20;
 
 // redis keys
 pub const COOK_QUEUE_PTR: &str = "cook_queue_ptr";
