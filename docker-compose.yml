@@ -4,6 +4,9 @@ services:
     build: .
     ports:
       - "3000:3000"
+    depends_on:
+      - "redis"
+      - "mysql"
     environment:
       SECS_PER_MIN: 15
       REDIS_HOST: redis
