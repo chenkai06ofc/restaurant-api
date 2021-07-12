@@ -5,6 +5,13 @@ services:
     ports:
       - "3000:3000"
     environment:
+      SECS_PER_MIN: 15
       REDIS_HOST: redis
+      MYSQL_HOST: mysql
+      MYSQL_PASSWORD: root
   redis:
     image: "redis:latest"
+  mysql:
+    build: ./mysql_service
+    environment:
+      MYSQL_ROOT_PASSWORD: root
