@@ -4,6 +4,8 @@ use std::collections::{HashMap, HashSet};
 use rand::Rng;
 use tokio::sync::Mutex;
 use std::sync::Arc;
+use mysql::Pool;
+use mysql::prelude::Queryable;
 
 pub const MIN_TABLE_NO: u32 = 1;
 pub const MAX_TABLE_NO: u32 = 100;
@@ -87,18 +89,29 @@ pub async fn get_item(r_con_hold: Arc<Mutex<Connection>>, table_no: u32, item_no
     )
 }
 
-pub async fn add_item(r_con_hold: Arc<Mutex<Connection>>, table_no: u32, content: &String) {
-    let mut r_con = r_con_hold.lock().await;
-
-    let mut item_no = r_con.incr(NEXT_ITEM_NO, 1).unwrap();
+pub async fn add_item(r_con_hold: Arc<Mutex<Connection>>,
+                      pool_hold: Arc<Pool>,
+                      table_no: u32,
+                      content: &String) {
+    // prepare data
+    let mut item_no = {
+        let mut r_con = r_con_hold.lock().await;
+        r_con.incr(NEXT_ITEM_NO, 1).unwrap()
+    };
     item_no -= 1;
+    let prepare_time_min = rand::thread_rng().gen_range(5..15);
 
+    // update MySQL
+    let mut conn = pool_hold.get_conn().unwrap();
+    conn.exec_drop("INSERT INTO item_t (status, table_no, item_no, content, time_take) VALUES (?, ?, ?, ?, ?)",
+                 ("cooking", table_no, item_no, content, prepare_time_min)).unwrap();
+
+    // update Redis
+    let mut r_con = r_con_hold.lock().await;
     let table_key = table_key(table_no);
     let item_key = item_l_key(table_no, item_no);
-    let prepare_time_min = rand::thread_rng().gen_range(5..15);
     println!("  add {}, time: {}", &item_key, prepare_time_min);
     let time_str = prepare_time_min.to_string();
-
 
     let mut cook_queue_ptr: u32 = r_con.get(COOK_QUEUE_PTR).unwrap();
     cook_queue_ptr = (cook_queue_ptr + prepare_time_min) % COOK_QUEUE_LEN;
@@ -110,10 +123,18 @@ pub async fn add_item(r_con_hold: Arc<Mutex<Connection>>, table_no: u32, content
         .query(&mut (*r_con)).unwrap();
 }
 
-pub async fn remove_item(r_con_hold: Arc<Mutex<Connection>>, table_no: u32, item_no: u64) {
+pub async fn remove_item(r_con_hold: Arc<Mutex<Connection>>,
+                         pool_hold: Arc<Pool>,
+                         table_no: u32,
+                         item_no: u64) {
     println!("  remove item: {}-{}", table_no, item_no);
-    let table_key = table_key(table_no);
+    // update MySQL
+    let mut conn = pool_hold.get_conn().unwrap();
+    conn.exec_drop("UPDATE item_t SET status='canceled' where status=? and table_no=? and item_no=?",
+                   ("cooking", table_no, item_no)).unwrap();
 
+    let table_key = table_key(table_no);
+    // update Redis
     let mut r_con = r_con_hold.lock().await;
     let _ : () = redis::pipe()
         .hdel(&table_key, item_no)
@@ -122,13 +143,17 @@ pub async fn remove_item(r_con_hold: Arc<Mutex<Connection>>, table_no: u32, item
         .query(&mut (*r_con)).unwrap();
 }
 
-pub async fn cook_complete(r_con_hold: Arc<Mutex<Connection>>) {
-    let mut r_con = r_con_hold.lock().await;
+pub async fn cook_complete(r_con_hold: Arc<Mutex<Connection>>, pool_hold: Arc<Pool>) {
+    let (mut cook_queue_ptr, key, cooked_items, removed_items) = {
+        let mut r_con = r_con_hold.lock().await;
+        let cook_queue_ptr: u32 = r_con.get(COOK_QUEUE_PTR).unwrap();
+        let key = cook_queue_key(cook_queue_ptr);
+        let cooked_items: Vec<String> = r_con.smembers(&key).unwrap();
+        let removed_items: HashSet<String> = r_con.smembers(REMOVED_ITEMS).unwrap();
+        (cook_queue_ptr, key, cooked_items, removed_items)
+    };
 
-    let mut cook_queue_ptr: u32 = r_con.get(COOK_QUEUE_PTR).unwrap();
-    let key = cook_queue_key(cook_queue_ptr);
-    let cooked_items: Vec<String> = r_con.smembers(&key).unwrap();
-    let removed_items: HashSet<String> = r_con.smembers(REMOVED_ITEMS).unwrap();
+
     let mut pipe = &mut redis::pipe();
 
     print!("round {} cooked: ", cook_queue_ptr);
@@ -138,13 +163,23 @@ pub async fn cook_complete(r_con_hold: Arc<Mutex<Connection>>) {
         } else {
             print!("{} ", s);
             let (table_no, item_no) = s.split_once("-").unwrap();
+            let table_no: u32 = table_no.parse().unwrap();
+            let item_no: u64 = item_no.parse().unwrap();
+
+            // update MySQL
+            let mut conn = pool_hold.get_conn().unwrap();
+            conn.exec_drop("UPDATE item_t SET status='cooked' where status=? and table_no=? and item_no=?",
+                           ("cooking", table_no, item_no)).unwrap();
+
+            // update Redis
             pipe = pipe
-                .hdel(format!("table:{}", table_no), item_no)
-                .del(format!("item:{}-{}", table_no, item_no));
+                .hdel(table_key(table_no), item_no)
+                .del(item_l_key(table_no, item_no));
         }
     }
     println!();
     cook_queue_ptr = (cook_queue_ptr + 1) % COOK_QUEUE_LEN;
+    let mut r_con = r_con_hold.lock().await;
     let _ : () = pipe
         .del(&key)
         .set(COOK_QUEUE_PTR, cook_queue_ptr)

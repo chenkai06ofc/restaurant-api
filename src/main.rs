@@ -12,6 +12,7 @@ mod item;
 mod config;
 
 use item::{AddReq, RemoveReq};
+use mysql::Pool;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -24,9 +25,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let r_con_hold1 = r_con_hold.clone();
     let r_con_hold2 = r_con_hold.clone();
 
+    let pool = Pool::new(config::mysql_opts()).unwrap();
+    let pool_hold = Arc::new(pool);
+    let pool_hold1 = pool_hold.clone();
+    let pool_hold2 = pool_hold.clone();
+
     let make_service = make_service_fn(move |_| {
         let r_con_hold = r_con_hold1.clone();
-        async move { Ok::<_, hyper::Error>(service_fn(move |req| handle_req(r_con_hold.clone(), req))) }
+        let pool_hold = pool_hold1.clone();
+        async move {
+            Ok::<_, hyper::Error>(service_fn(move |req| handle_req(r_con_hold.clone(), pool_hold.clone(), req)))
+        }
     });
 
     let addr = ([0, 0, 0, 0], 3000).into();
@@ -36,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut interval = time::interval(Duration::from_secs(config::seconds_per_min()));
         loop {
             interval.tick().await;
-            item::cook_complete(r_con_hold2.clone()).await;
+            item::cook_complete(r_con_hold2.clone(), pool_hold2.clone()).await;
         }
     });
 
@@ -46,10 +55,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 }
 
 
-async fn handle_req(r_con_hold: Arc<Mutex<Connection>>, req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+async fn handle_req(r_con_hold: Arc<Mutex<Connection>>,
+                    pool_hold: Arc<Pool>,
+                    req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
     match (req.method(), req.uri().path()) {
-        (&Method::POST, "/item/add") => handle_add(r_con_hold, req).await,
-        (&Method::POST, "/item/remove") => handle_remove(r_con_hold, req).await,
+        (&Method::POST, "/item/add") => handle_add(r_con_hold, pool_hold, req).await,
+        (&Method::POST, "/item/remove") => handle_remove(r_con_hold, pool_hold, req).await,
         (&Method::GET, "/item/query") => {
             let query_string = match req.uri().query() {
                 Some(str) => str,
@@ -76,12 +87,14 @@ fn bad_request(msg: &'static str) -> Response<Body> {
         .unwrap()
 }
 
-async fn handle_add(r_con_hold: Arc<Mutex<Connection>>, req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+async fn handle_add(r_con_hold: Arc<Mutex<Connection>>,
+                    pool_hold: Arc<Pool>,
+                    req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
     let body_u8 = get_u8_body(req).await;
     let s = str::from_utf8(&body_u8).unwrap();
     match AddReq::from(s) {
         Ok(add_req) => {
-            item::add_item(r_con_hold, add_req.table_no, &add_req.content).await;
+            item::add_item(r_con_hold, pool_hold, add_req.table_no, &add_req.content).await;
             Ok(Response::new("add succeed".into()))
         }
         Err(_) => Ok(bad_request("Please specify table_no & content"))
@@ -89,12 +102,14 @@ async fn handle_add(r_con_hold: Arc<Mutex<Connection>>, req: Request<Body>) -> R
 }
 
 
-async fn handle_remove(r_con_hold: Arc<Mutex<Connection>>, req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+async fn handle_remove(r_con_hold: Arc<Mutex<Connection>>,
+                       pool_hold: Arc<Pool>,
+                       req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
     let body_u8 = get_u8_body(req).await;
     let s = str::from_utf8(&body_u8).unwrap();
     match RemoveReq::from(s) {
         Ok(remove_req) => {
-            item::remove_item(r_con_hold, remove_req.table_no, remove_req.item_no).await;
+            item::remove_item(r_con_hold, pool_hold, remove_req.table_no, remove_req.item_no).await;
             Ok(Response::new("remove succeed".into()))
         }
         Err(_) => Ok(bad_request("Please specify table_no & item_no"))
@@ -102,7 +117,8 @@ async fn handle_remove(r_con_hold: Arc<Mutex<Connection>>, req: Request<Body>) -
 }
 
 
-async fn handle_query(r_con_hold: Arc<Mutex<Connection>>, params: HashMap<String, String>) -> Result<Response<Body>, hyper::Error> {
+async fn handle_query(r_con_hold: Arc<Mutex<Connection>>,
+                      params: HashMap<String, String>) -> Result<Response<Body>, hyper::Error> {
     match (params.get("table_no"), params.get("item_no")) {
         (Some(table_no), Some(item_no)) => {
             let table_no: u32 = table_no.parse().unwrap();
