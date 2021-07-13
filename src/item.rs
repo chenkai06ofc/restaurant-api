@@ -92,7 +92,11 @@ pub async fn get_item(r_con_hold: Arc<Mutex<Connection>>, table_no: u32, item_no
 pub async fn add_item(r_con_hold: Arc<Mutex<Connection>>,
                       pool_hold: Arc<Pool>,
                       table_no: u32,
-                      content: &String) {
+                      content: &String) -> Result<String, String> {
+    if table_no < MIN_TABLE_NO || table_no > MAX_TABLE_NO {
+        return Result::Err(format!("Please specify table_no between {} and {}", MIN_TABLE_NO, MAX_TABLE_NO));
+    }
+
     // prepare data
     let mut item_no = {
         let mut r_con = r_con_hold.lock().await;
@@ -121,6 +125,7 @@ pub async fn add_item(r_con_hold: Arc<Mutex<Connection>>,
         .hset_multiple(&item_key, &[("content", content), ("prepare_time_min", &time_str) ])
         .sadd(cook_queue_key(cook_queue_ptr), item_s_key(table_no, item_no))
         .query(&mut (*r_con)).unwrap();
+    Result::Ok(format!("OK"))
 }
 
 pub async fn remove_item(r_con_hold: Arc<Mutex<Connection>>,
@@ -132,7 +137,7 @@ pub async fn remove_item(r_con_hold: Arc<Mutex<Connection>>,
         r_con.exists(item_l_key(table_no, item_no)).unwrap()
     };
     if exist == 0 {
-        return Result::Err(format!("table_no:{} & item_no:{} does not exist", table_no, item_no));
+        return Result::Err(format!("item:{}-{} does not exist", table_no, item_no));
     }
 
     println!("  remove item: {}-{}", table_no, item_no);

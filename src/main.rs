@@ -15,7 +15,7 @@ use item::{AddReq, RemoveReq};
 use mysql::Pool;
 
 const REMOVE_WRONG_PARAM: &str = r#"[parameters wrong]
-Please specify table_no & item_no as positive integer.
+Please specify (table_no, item_no) as positive integer.
 Like {table_no: 1, item_no: 4}"#;
 
 
@@ -124,8 +124,11 @@ async fn handle_add(r_con_hold: Arc<Mutex<Connection>>,
     let s = str::from_utf8(&body_u8).unwrap();
     match AddReq::from(s) {
         Ok(add_req) => {
-            item::add_item(r_con_hold, pool_hold, add_req.table_no, &add_req.content).await;
-            Ok(Response::new("add succeed".into()))
+            let re = item::add_item(r_con_hold, pool_hold, add_req.table_no, &add_req.content).await;
+            match re {
+                Ok(_) => Ok(Response::new("item added".into())),
+                Err(s) => Ok(op_fail(s))
+            }
         }
         Err(_) => Ok(bad_request("Please specify table_no & content"))
     }
