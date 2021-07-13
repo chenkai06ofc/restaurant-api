@@ -14,6 +14,10 @@ mod config;
 use item::{AddReq, RemoveReq};
 use mysql::Pool;
 
+const REMOVE_WRONG_PARAM: &str = r#"[parameters wrong]
+Please specify table_no & item_no as positive integer.
+Like {table_no: 1, item_no: 4}"#;
+
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -52,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
-    println!("Listening on http://{}", addr);
+    println!("Listening on http://{}\nYou can start to interact with restaurant-api\n", addr);
     server.await?;
     Ok(())
 }
@@ -105,6 +109,14 @@ fn bad_request(msg: &'static str) -> Response<Body> {
         .unwrap()
 }
 
+fn op_fail(msg: String) -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::EXPECTATION_FAILED)
+        .body(Body::from(format!("[Operation Failed]\n{}", msg)))
+        .unwrap()
+}
+
+
 async fn handle_add(r_con_hold: Arc<Mutex<Connection>>,
                     pool_hold: Arc<Pool>,
                     req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
@@ -127,10 +139,13 @@ async fn handle_remove(r_con_hold: Arc<Mutex<Connection>>,
     let s = str::from_utf8(&body_u8).unwrap();
     match RemoveReq::from(s) {
         Ok(remove_req) => {
-            item::remove_item(r_con_hold, pool_hold, remove_req.table_no, remove_req.item_no).await;
-            Ok(Response::new("remove succeed".into()))
+            let re = item::remove_item(r_con_hold, pool_hold, remove_req.table_no, remove_req.item_no).await;
+            match re {
+                Ok(_) => Ok(Response::new("item removed".into())),
+                Err(s) => Ok(op_fail(s))
+            }
         }
-        Err(_) => Ok(bad_request("Please specify table_no & item_no"))
+        Err(_) => Ok(bad_request(REMOVE_WRONG_PARAM))
     }
 }
 

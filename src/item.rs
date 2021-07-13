@@ -126,7 +126,15 @@ pub async fn add_item(r_con_hold: Arc<Mutex<Connection>>,
 pub async fn remove_item(r_con_hold: Arc<Mutex<Connection>>,
                          pool_hold: Arc<Pool>,
                          table_no: u32,
-                         item_no: u64) {
+                         item_no: u64) -> Result<String, String> {
+    let exist: u32 = {
+        let mut r_con = r_con_hold.lock().await;
+        r_con.exists(item_l_key(table_no, item_no)).unwrap()
+    };
+    if exist == 0 {
+        return Result::Err(format!("table_no:{} & item_no:{} does not exist", table_no, item_no));
+    }
+
     println!("  remove item: {}-{}", table_no, item_no);
     // update MySQL
     let mut conn = pool_hold.get_conn().unwrap();
@@ -136,11 +144,13 @@ pub async fn remove_item(r_con_hold: Arc<Mutex<Connection>>,
     let table_key = table_key(table_no);
     // update Redis
     let mut r_con = r_con_hold.lock().await;
+
     let _ : () = redis::pipe()
         .hdel(&table_key, item_no)
         .del(item_l_key(table_no, item_no))
         .sadd(REMOVED_ITEMS, item_s_key(table_no, item_no))
         .query(&mut (*r_con)).unwrap();
+    Result::Ok(format!("OK"))
 }
 
 pub async fn cook_complete(r_con_hold: Arc<Mutex<Connection>>, pool_hold: Arc<Pool>) {
@@ -156,7 +166,7 @@ pub async fn cook_complete(r_con_hold: Arc<Mutex<Connection>>, pool_hold: Arc<Po
 
     let mut pipe = &mut redis::pipe();
 
-    print!("round {} cooked: ", cook_queue_ptr);
+    print!("{}th minute cooked: ", cook_queue_ptr);
     for s in cooked_items.iter() {
         if removed_items.contains(s) {
             pipe = pipe.srem(REMOVED_ITEMS, s);
