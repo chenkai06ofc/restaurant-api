@@ -14,6 +14,7 @@ mod config;
 use item::{AddReq, RemoveReq};
 use mysql::Pool;
 
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let client = redis::Client::open(&(config::redis_url())[..]).unwrap();
@@ -21,11 +22,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let _ : () = r_con.set(item::COOK_QUEUE_PTR, 0).unwrap();
     let _ : () = r_con.set(item::NEXT_ITEM_NO, 1).unwrap();
 
+    // redis connection
     let r_con_hold = Arc::new(Mutex::new(r_con));
     let r_con_hold1 = r_con_hold.clone();
     let r_con_hold2 = r_con_hold.clone();
 
-    let pool = Pool::new(config::mysql_opts()).unwrap();
+    // mysql connection pool
+    let pool = wait_get_mysql_conn().await;
     let pool_hold = Arc::new(pool);
     let pool_hold1 = pool_hold.clone();
     let pool_hold2 = pool_hold.clone();
@@ -71,6 +74,21 @@ async fn handle_req(r_con_hold: Arc<Mutex<Connection>>,
         }
         _ => Ok(not_found("path not found"))
     }
+}
+
+async fn wait_get_mysql_conn() -> Pool {
+    let mut interval = time::interval(Duration::from_secs(5));
+    let mut result;
+    loop {
+        result = Pool::new(config::mysql_opts());
+        if result.is_ok() {
+            break;
+        } else {
+            println!("Waiting for MySQL to become available...");
+            interval.tick().await;
+        }
+    }
+    result.unwrap()
 }
 
 fn not_found(msg: &'static str) -> Response<Body> {
