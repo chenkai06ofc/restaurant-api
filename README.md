@@ -29,6 +29,7 @@ Naturally 1 minute=60 seconds, but for test purpose you can set 1 min to less se
 ~$ curl -X POST http://localhost:3000/item/add -d '{"table_no": 5, "content": "rice"}'
 ~$ curl -X POST http://localhost:3000/item/add -d '{"table_no": 10, "content": "meat"}'
 ```
+You can copy the commands in ```test_data.data``` to have a try on it.
 
 # API
 ### add item:
