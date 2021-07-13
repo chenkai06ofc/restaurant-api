@@ -1,0 +1,16 @@
+# insert data
+curl -X POST http://localhost:3000/item/add -d '{"table_no": 5, "content": "apple"}'
+curl -X POST http://localhost:3000/item/add -d '{"table_no": 10, "content": "rice"}'
+curl -X POST http://localhost:3000/item/add -d '{"table_no": 5, "content": "banana"}'
+curl -X POST http://localhost:3000/item/add -d '{"table_no": 5, "content": "orange"}'
+curl -X POST http://localhost:3000/item/add -d '{"table_no": 5, "content": "rice"}'
+
+curl -X POST http://localhost:3000/item/add -d '{"table_no": 10, "content": "meat"}'
+curl -X POST http://localhost:3000/item/add -d '{"table_no": 10, "content": "water"}'
+
+# query data
+curl -X GET http://localhost:3000/item/query?table_no=5
+curl -X GET http://localhost:3000/item/query?table_no=5&item_no=3
+
+# remove data
+curl -X POST http://localhost:3000/item/remove -d '{"table_no": 5, "item_no": 3}'
