@@ -12,7 +12,8 @@ open 3 shell sessions
 ~$ cd restaurant-api
 ~/restaurant-api$ docker-compose up
 ```
-(Before ```docker-compose up```, make sure local port ```6379 & 3306``` are available, because the Redis & Mysql running in container will bind to local port)
+Before ```docker-compose up```, make sure local port ```6379 & 3306``` are available, because the Redis & Mysql running in container will bind to local port.
+(Sorry, I tried to put the everything into 1 docker-compose, but encountered some problems. )
 
 #### session 2:
 ```shell
@@ -20,9 +21,7 @@ open 3 shell sessions
 ~/restaurant-api$ cargo build
 ~/restaurant-api$ SECS_PER_MIN=16 ./target/debug/restaurant-api
 ```
-(Naturally 1 minute=60 seconds, but for test purpose you can set 1 min to less secs to make time pass faster.) 
-
-(e.g ```SECS_PER_MIN=20``` will make 1 min=20 secs)
+Naturally 1 minute=60 seconds, but for test purpose you can set 1 min to less secs to make time pass faster. (e.g ```SECS_PER_MIN=20``` will make 1 min=20 secs)
 
 #### session 3:
 ```shell
@@ -50,3 +49,8 @@ curl -X GET http://localhost:3000/item/query?table_no=5
 ```shell
 curl -X GET http://localhost:3000/item/query?table_no=5&item_no=6
 ```
+
+# Not Yet Implemented
+### Message Queue
+Let app server interact with MySQL is not so good, so I plan to add a MQ in between. Every RDB update request just send to MQ, another thread will poll and interact with MySQL.
+
