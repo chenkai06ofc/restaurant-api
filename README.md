@@ -14,6 +14,7 @@ open 3 shell sessions
 ~$ cd restaurant-api
 ~/restaurant-api$ docker-compose up
 ```
+(Before docker-compose up, make sure local port 6379 & 3306 are available, because the Redis & Mysql running in container will bind to local port)
 
 ##### session 2:
 ```shell
@@ -30,19 +31,19 @@ open 3 shell sessions
 ```
 
 ## API
-##### add item:
+#### add item:
 ```shell
 ~$ curl -X POST http://localhost:3000/item/add -d '{"table_no": 5, "content": "apple"}'
 ```
-##### remove item:
+#### remove item:
 ```shell
 ~$ curl -X POST http://localhost:3000/item/remove -d '{"table_no": 5, "item_no": 2}'
 ```
-##### query specific table:
+#### query specific table: (get item list of a specific table)
 ```shell
 curl -X GET http://localhost:3000/item/query?table_no=5
 ```
-##### query specific item:
+#### query specific item: (get the detail of a specific item)
 ```shell
 curl -X GET http://localhost:3000/item/query?table_no=5&item_no=6
 ```
