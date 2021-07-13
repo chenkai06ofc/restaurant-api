@@ -4,7 +4,7 @@ This is a simplified implementation of a restaurant api according to the require
 
 ## How to use:
 
-**[Mac environment]**
+**[Mac] or [Linux]**
 
 open 3 shell sessions
 
@@ -27,4 +27,22 @@ open 3 shell sessions
 ~$ curl -X POST http://localhost:3000/item/add -d '{"table_no": 5, "content": "apple"}'
 ~$ curl -X POST http://localhost:3000/item/add -d '{"table_no": 5, "content": "rice"}'
 ~$ curl -X POST http://localhost:3000/item/add -d '{"table_no": 10, "content": "meat"}'
+```
+
+## API
+##### add item:
+```shell
+~$ curl -X POST http://localhost:3000/item/add -d '{"table_no": 5, "content": "apple"}'
+```
+##### remove item:
+```shell
+~$ curl -X POST http://localhost:3000/item/remove -d '{"table_no": 5, "item_no": 2}'
+```
+##### query specific table:
+```shell
+curl -X GET http://localhost:3000/item/query?table_no=5
+```
+##### query specific item:
+```shell
+curl -X GET http://localhost:3000/item/query?table_no=5&item_no=6
 ```
