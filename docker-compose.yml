@@ -1,20 +1,24 @@
 version: "3.9"
 services:
-  web:
-    build: .
-    ports:
-      - "3000:3000"
-    depends_on:
-      - "redis"
-      - "mysql"
-    environment:
-      SECS_PER_MIN: 15
-      REDIS_HOST: redis
-      MYSQL_HOST: mysql
-      MYSQL_PASSWORD: root
+#  web:
+#    build: .
+#    ports:
+#      - "3000:3000"
+#    depends_on:
+#      - "redis"
+#      - "mysql"
+#    environment:
+#      SECS_PER_MIN: 15
+#      REDIS_HOST: redis
+#      MYSQL_HOST: mysql
+#      MYSQL_PASSWORD: root
   redis:
     image: "redis:latest"
+    ports:
+      - "6379:6379"
   mysql:
     build: ./mysql_service
     environment:
       MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"

@@ -32,7 +32,7 @@ pub fn mysql_opts() -> Opts {
 
     let password = match env::var(ENV_MYSQL_PASSWORD) {
         Ok(s) => s,
-        Err(_) => String::from("")
+        Err(_) => String::from("root")
     };
 
     let table_name = match env::var(ENV_MYSQL_TABLE_NAME) {
