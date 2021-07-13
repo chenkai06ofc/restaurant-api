@@ -22,17 +22,18 @@ pub struct Item {
     table_no: u32,
     item_no: u64,
     content: String,
-    //generate_time:
-    prepare_time_min: u32,
+    create_at: u64, // in seconds
+    time_take: u32, // in minutes
 }
 
 impl Item {
-    pub fn new(table_no: u32, item_no: u64, content: String, prepare_time_min: u32) -> Item {
+    pub fn new(table_no: u32, item_no: u64, content: String, create_at: u64, time_take: u32) -> Item {
         Item {
             table_no,
             item_no,
             content,
-            prepare_time_min
+            create_at,
+            time_take
         }
     }
 }
@@ -89,7 +90,8 @@ pub async fn get_item(r_con_hold: Arc<Mutex<Connection>>,
             table_no,
             item_no,
             String::from(map.get("content").unwrap()),
-            map.get("prepare_time_min").unwrap().parse().unwrap()
+            map.get("create_at").unwrap().parse().unwrap(),
+            map.get("time_take").unwrap().parse().unwrap()
         ))
     }
 }
@@ -108,26 +110,27 @@ pub async fn add_item(r_con_hold: Arc<Mutex<Connection>>,
         r_con.incr(NEXT_ITEM_NO, 1).unwrap()
     };
     item_no -= 1;
-    let prepare_time_min = rand::thread_rng().gen_range(5..15);
+    let create_at = crate::util::secs_since_epoch();
+    let time_take = rand::thread_rng().gen_range(5..15);
 
     // update MySQL
     let mut conn = pool_hold.get_conn().unwrap();
-    conn.exec_drop("INSERT INTO item_t (status, table_no, item_no, content, time_take) VALUES (?, ?, ?, ?, ?)",
-                 ("cooking", table_no, item_no, content, prepare_time_min)).unwrap();
+    conn.exec_drop("INSERT INTO item_t (status, table_no, item_no, content, create_at, time_take) VALUES (?, ?, ?, ?, ?, ?)",
+                 ("cooking", table_no, item_no, content, create_at, time_take)).unwrap();
 
     // update Redis
     let mut r_con = r_con_hold.lock().await;
     let table_key = table_key(table_no);
     let item_key = item_l_key(table_no, item_no);
-    println!("  add {}, time: {} mins", &item_key, prepare_time_min);
-    let time_str = prepare_time_min.to_string();
+    println!("  add {}, time: {} mins", &item_key, time_take);
+    let time_str = time_take.to_string();
 
     let mut cook_queue_ptr: u32 = r_con.get(COOK_QUEUE_PTR).unwrap();
-    cook_queue_ptr = (cook_queue_ptr + prepare_time_min) % COOK_QUEUE_LEN;
+    cook_queue_ptr = (cook_queue_ptr + time_take) % COOK_QUEUE_LEN;
 
     let _ : () = redis::pipe()
         .hset(&table_key, &item_no.to_string(), content)
-        .hset_multiple(&item_key, &[("content", content), ("prepare_time_min", &time_str) ])
+        .hset_multiple(&item_key, &[("content", content), ("create_at", &create_at.to_string()), ("time_take", &time_str) ])
         .sadd(cook_queue_key(cook_queue_ptr), item_s_key(table_no, item_no))
         .query(&mut (*r_con)).unwrap();
     Result::Ok(format!("OK"))
@@ -137,12 +140,19 @@ pub async fn remove_item(r_con_hold: Arc<Mutex<Connection>>,
                          pool_hold: Arc<Pool>,
                          table_no: u32,
                          item_no: u64) -> Result<String, String> {
-    let exist: u32 = {
+    let item_map: HashMap<String, String> = {
         let mut r_con = r_con_hold.lock().await;
-        r_con.exists(item_l_key(table_no, item_no)).unwrap()
+        r_con.hgetall(item_l_key(table_no, item_no)).unwrap()
     };
-    if exist == 0 {
+
+    if item_map.is_empty() {
         return Result::Err(format!("Item:{}-{} does not exist", table_no, item_no));
+    }
+    let create_at: u64 = item_map.get("create_at").unwrap().parse().unwrap();
+    let time_take: u64 = item_map.get("time_take").unwrap().parse().unwrap();
+
+    if crate::util::secs_since_epoch() > (create_at + (time_take - 3) * crate::config::seconds_per_min()) {
+        return Result::Err(format!("Cannot remove item that will be completed in less than 3 minutes."));
     }
 
     println!("  remove item: {}-{}", table_no, item_no);

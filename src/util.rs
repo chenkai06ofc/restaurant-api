@@ -1,10 +1,16 @@
 use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn parse_query_str(query_string: &str) -> HashMap<String, String> {
     query_string.split("&")
         .map(|s| s.split_once("=").unwrap())
         .map(|(s1, s2)| (String::from(s1), String::from(s2)))
         .collect()
+}
+
+pub fn secs_since_epoch() -> u64 {
+    let since_epoch = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    since_epoch.as_secs()
 }
 
 #[cfg(test)]
