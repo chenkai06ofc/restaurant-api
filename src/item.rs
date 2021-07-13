@@ -77,16 +77,21 @@ fn cook_queue_key(cook_queue_ptr: u32) -> String {
     format!("cook_queue:{}", cook_queue_ptr)
 }
 
-pub async fn get_item(r_con_hold: Arc<Mutex<Connection>>, table_no: u32, item_no: u64) -> Item {
+pub async fn get_item(r_con_hold: Arc<Mutex<Connection>>,
+                      table_no: u32,
+                      item_no: u64) -> Result<Item, String> {
     let mut r_con = r_con_hold.lock().await;
     let map : HashMap<String, String> = r_con.hgetall(item_l_key(table_no, item_no)).unwrap();
-
-    Item::new(
-        table_no,
-        item_no,
-        String::from(map.get("content").unwrap()),
-        map.get("prepare_time_min").unwrap().parse().unwrap()
-    )
+    if map.is_empty() {
+        Result::Err(format!("Item:{}-{} does not exist", table_no, item_no))
+    } else {
+        Result::Ok(Item::new(
+            table_no,
+            item_no,
+            String::from(map.get("content").unwrap()),
+            map.get("prepare_time_min").unwrap().parse().unwrap()
+        ))
+    }
 }
 
 pub async fn add_item(r_con_hold: Arc<Mutex<Connection>>,
@@ -114,7 +119,7 @@ pub async fn add_item(r_con_hold: Arc<Mutex<Connection>>,
     let mut r_con = r_con_hold.lock().await;
     let table_key = table_key(table_no);
     let item_key = item_l_key(table_no, item_no);
-    println!("  add {}, time: {}", &item_key, prepare_time_min);
+    println!("  add {}, time: {} mins", &item_key, prepare_time_min);
     let time_str = prepare_time_min.to_string();
 
     let mut cook_queue_ptr: u32 = r_con.get(COOK_QUEUE_PTR).unwrap();
@@ -137,7 +142,7 @@ pub async fn remove_item(r_con_hold: Arc<Mutex<Connection>>,
         r_con.exists(item_l_key(table_no, item_no)).unwrap()
     };
     if exist == 0 {
-        return Result::Err(format!("item:{}-{} does not exist", table_no, item_no));
+        return Result::Err(format!("Item:{}-{} does not exist", table_no, item_no));
     }
 
     println!("  remove item: {}-{}", table_no, item_no);

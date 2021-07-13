@@ -13,6 +13,7 @@ mod config;
 
 use item::{AddReq, RemoveReq};
 use mysql::Pool;
+use crate::item::Item;
 
 const REMOVE_WRONG_PARAM: &str = r#"[parameters wrong]
 Please specify (table_no, item_no) as positive integer.
@@ -71,12 +72,12 @@ async fn handle_req(r_con_hold: Arc<Mutex<Connection>>,
         (&Method::GET, "/item/query") => {
             let query_string = match req.uri().query() {
                 Some(str) => str,
-                None => return Ok(not_found("parameter (table_no & [item_no]) not found"))
+                None => return Ok(not_found("[Error]\nparameter (table_no & [item_no]) not found"))
             };
             let params = util::parse_query_str(query_string);
             handle_query(r_con_hold, params).await
         }
-        _ => Ok(not_found("path not found"))
+        _ => Ok(not_found("[Error]\npath not found"))
     }
 }
 
@@ -98,7 +99,7 @@ async fn wait_get_mysql_conn() -> Pool {
 fn not_found(msg: &'static str) -> Response<Body> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
-        .body(Body::from(format!("Error: {}", msg)))
+        .body(Body::from(format!("[Error]: {}", msg)))
         .unwrap()
 }
 
@@ -155,22 +156,33 @@ async fn handle_remove(r_con_hold: Arc<Mutex<Connection>>,
 
 async fn handle_query(r_con_hold: Arc<Mutex<Connection>>,
                       params: HashMap<String, String>) -> Result<Response<Body>, hyper::Error> {
-    match (params.get("table_no"), params.get("item_no")) {
-        (Some(table_no), Some(item_no)) => {
-            let table_no: u32 = table_no.parse().unwrap();
-            let item_no: u64 = item_no.parse().unwrap();
-            let item = item::get_item(r_con_hold, table_no, item_no).await;
-            let serialized = serde_json::to_string(&item).unwrap();
-            Ok(Response::new(serialized.into()))
-        }
-        (Some(table_no), None) => {
-            let mut r_con = r_con_hold.lock().await;
-            let map : HashMap<String, String> = r_con.hgetall(format!("table:{}", table_no)).unwrap();
-            let serialized = serde_json::to_string(&map).unwrap();
-            Ok(Response::new(serialized.into()))
+    match params.get("table_no") {
+        Some(s) => match s.parse::<u32>() {
+            Ok(table_no) => match params.get("item_no") {
+                Some(s) => match s.parse::<u64>() {
+                    Ok(item_no) => {
+                        match item::get_item(r_con_hold, table_no, item_no).await {
+                            Ok(item) => {
+                                let serialized = serde_json::to_string(&item).unwrap();
+                                Ok(Response::new(serialized.into()))
+                            }
+                            Err(s) => Ok(op_fail(s))
+                        }
+                    }
+                    Err(_) => Ok(not_found("item_no should be integer"))
+                }
+                None => {
+                    let mut r_con = r_con_hold.lock().await;
+                    let map : HashMap<String, String> = r_con.hgetall(format!("table:{}", table_no)).unwrap();
+                    let serialized = serde_json::to_string(&map).unwrap();
+                    Ok(Response::new(serialized.into()))
+                }
+            }
+            Err(_) => Ok(not_found("table_no should be integer"))
         }
         _ => Ok(not_found("parameter (table_no & [item_no]) not found"))
     }
+
 }
 
 async fn get_u8_body(req: Request<Body>) -> Vec<u8> {
