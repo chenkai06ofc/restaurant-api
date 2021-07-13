@@ -12,7 +12,7 @@ open 3 shell sessions
 ~$ cd restaurant-api
 ~/restaurant-api$ docker-compose up
 ```
-(Before docker-compose up, make sure local port 6379 & 3306 are available, because the Redis & Mysql running in container will bind to local port)
+(Before ```docker-compose up```, make sure local port ```6379 & 3306``` are available, because the Redis & Mysql running in container will bind to local port)
 
 #### session 2:
 ```shell
@@ -22,7 +22,7 @@ open 3 shell sessions
 ```
 (Naturally 1 minute=60 seconds, but for test purpose you can set 1 min to less secs to make time pass faster.) 
 
-(e.g SECS_PER_MIN=20 will make 1 min=20 secs)
+(e.g ```SECS_PER_MIN=20``` will make 1 min=20 secs)
 
 #### session 3:
 ```shell
