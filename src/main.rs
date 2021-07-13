@@ -13,7 +13,6 @@ mod config;
 
 use item::{AddReq, RemoveReq};
 use mysql::Pool;
-use crate::item::Item;
 
 const REMOVE_WRONG_PARAM: &str = r#"[parameters wrong]
 Please specify (table_no, item_no) as positive integer.
@@ -22,8 +21,7 @@ Like {table_no: 1, item_no: 4}"#;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let client = redis::Client::open(&(config::redis_url())[..]).unwrap();
-    let mut r_con = client.get_connection().unwrap();
+    let mut r_con =wait_get_redis_conn().await;
     let _ : () = r_con.set(item::COOK_QUEUE_PTR, 0).unwrap();
     let _ : () = r_con.set(item::NEXT_ITEM_NO, 1).unwrap();
 
@@ -79,6 +77,23 @@ async fn handle_req(r_con_hold: Arc<Mutex<Connection>>,
         }
         _ => Ok(not_found("[Error]\npath not found"))
     }
+}
+
+async fn wait_get_redis_conn() -> Connection {
+    let client = redis::Client::open(&(config::redis_url())[..]).unwrap();
+
+    let mut interval = time::interval(Duration::from_secs(2));
+    let mut result;
+    loop {
+        result = client.get_connection();
+        if result.is_ok() {
+            break;
+        } else {
+            println!("Waiting for Redis to become available...");
+            interval.tick().await;
+        }
+    }
+    result.unwrap()
 }
 
 async fn wait_get_mysql_conn() -> Pool {
